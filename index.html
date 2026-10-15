@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flappy Bird — моя гра</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    padding: 18px; font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+    background: linear-gradient(145deg, #c6f4ff, #f4eaff); color: #183044;
+  }
+  .wrap { width: min(100%, 460px); text-align: center; }
+  h1 { margin: 0 0 6px; font-size: clamp(1.7rem, 5vw, 2.3rem); }
+  .sub { margin: 0 0 14px; color: #496276; }
+  .game-shell {
+    position: relative; overflow: hidden; border: 4px solid #fff;
+    border-radius: 22px; box-shadow: 0 16px 45px #44617b35;
+    background: #8de4fa;
+  }
+  canvas { display: block; width: 100%; height: auto; touch-action: manipulation; }
+  .hud {
+    position: absolute; inset: 12px 14px auto; display: flex;
+    justify-content: space-between; align-items: start; pointer-events: none;
+    color: #fff; text-shadow: 0 2px 4px #31556b99; font-weight: 800;
+  }
+  .score { font-size: 2rem; line-height: 1; }
+  .best { font-size: .95rem; }
+  .overlay {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    padding: 24px; background: #14354a28;
+  }
+  .panel {
+    width: min(100%, 310px); padding: 22px 20px; border-radius: 20px;
+    background: #fffef2f2; box-shadow: 0 8px 30px #24465b30;
+  }
+  .panel h2 { margin: 0 0 8px; font-size: 1.6rem; }
+  .panel p { margin: 0 0 15px; line-height: 1.45; }
+  button {
+    border: 0; border-radius: 999px; padding: 12px 22px; font: inherit;
+    font-weight: 800; cursor: pointer; color: #17364b; background: #ffd65a;
+    box-shadow: 0 4px 0 #e8ac34; transition: transform .08s;
+  }
+  button:active { transform: translateY(3px); box-shadow: 0 1px 0 #e8ac34; }
+  .hint { margin: 13px 0 0; font-size: .95rem; line-height: 1.5; }
+  kbd { display: inline-block; padding: 2px 7px; border-radius: 6px; background: #fff; border: 1px solid #c6d6df; box-shadow: 0 2px 0 #c6d6df; font-size: .9em; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <h1>🐤 Flappy Bird</h1>
+  <p class="sub">Пролітай між трубами та набирай очки!</p>
+  <div class="game-shell">
+    <canvas id="game" width="420" height="620" aria-label="Гра Flappy Bird"></canvas>
+    <div class="hud">
+      <div class="score" id="score">0</div>
+      <div class="best">Рекорд: <span id="best">0</span></div>
+    </div>
+    <div class="overlay" id="overlay">
+      <div class="panel">
+        <h2 id="panelTitle">Готовий до польоту?</h2>
+        <p id="panelText">Натискай, щоб пташка змахнула крильцями. Уникай труб!</p>
+        <button id="startBtn">Почати гру</button>
+      </div>
+    </div>
+  </div>
+  <p class="hint">Керування: <kbd>Пробіл</kbd> / <kbd>↑</kbd> / клік мишкою<br>На ноутбуці можна також натискати або торкатися ігрового поля.</p>
+</main>
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const bestEl = document.getElementById('best');
+  const overlay = document.getElementById('overlay');
+  const panelTitle = document.getElementById('panelTitle');
+  const panelText = document.getElementById('panelText');
+  const startBtn = document.getElementById('startBtn');
+
+  const W = canvas.width, H = canvas.height;
+  const groundH = 76;
+  const bird = { x: 105, y: 275, r: 15, vy: 0, angle: 0 };
+  const gravity = 0.38, flapPower = -6.7;
+  const pipeW = 68, gapH = 168, pipeSpeed = 2.55;
+  let pipes = [], score = 0, best = 0, state = 'ready', frame = 0;
+  try { best = Number(localStorage.getItem('flappyBest') || 0); } catch (_) {}
+  bestEl.textContent = best;
+
+  function reset() {
+    bird.y = 275; bird.vy = 0; bird.angle = 0;
+    pipes = []; score = 0; frame = 0;
+    scoreEl.textContent = score;
+    addPipe(W + 30);
+  }
+  function addPipe(x) {
+    const margin = 65;
+    const top = margin + Math.random() * (H - groundH - gapH - margin * 2);
+    pipes.push({ x, top, bottom: top + gapH, passed: false });
+  }
+  function start() {
+    reset();
+    state = 'playing';
+    overlay.style.display = 'none';
+    flap();
+  }
+  function flap() {
+    if (state === 'ready') { start(); return; }
+    if (state === 'over') return;
+    bird.vy = flapPower;
+  }
+  function gameOver() {
+    if (state !== 'playing') return;
+    state = 'over';
+    if (score > best) {
+      best = score; bestEl.textContent = best;
+      try { localStorage.setItem('flappyBest', String(best)); } catch (_) {}
+    }
+    panelTitle.textContent = 'Гру завершено!';
+    panelText.textContent = `Твій результат: ${score}. Рекорд: ${best}. Спробуєш ще раз?`;
+    startBtn.textContent = 'Грати ще раз';
+    overlay.style.display = 'grid';
+  }
+  function roundedRect(x, y, w, h, r) {
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fill();
+  }
+  function drawBackground() {
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#73d9f7'); sky.addColorStop(1, '#d6f8ff');
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
+    // Хмаринки
+    ctx.fillStyle = '#ffffffb8';
+    for (const c of [{x:55,y:105,s:1},{x:280,y:165,s:.75},{x:365,y:75,s:.55}]) {
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y, 29*c.s, 12*c.s, 0, 0, Math.PI*2);
+      ctx.ellipse(c.x-17*c.s, c.y+3*c.s, 17*c.s, 10*c.s, 0, 0, Math.PI*2);
+      ctx.ellipse(c.x+16*c.s, c.y+1*c.s, 19*c.s, 13*c.s, 0, 0, Math.PI*2);
+      ctx.fill();
+    }
+    // Далекі пагорби
+    ctx.fillStyle = '#a5e9bd';
+    ctx.beginPath(); ctx.moveTo(0,H-groundH);
+    for(let x=0;x<=W+30;x+=30) ctx.lineTo(x, H-groundH-28-Math.sin(x*.025)*18);
+    ctx.lineTo(W,H-groundH); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#78d99c';
+    ctx.beginPath(); ctx.moveTo(0,H-groundH);
+    for(let x=0;x<=W+20;x+=20) ctx.lineTo(x,H-groundH-12-Math.sin(x*.04+1)*12);
+    ctx.lineTo(W,H-groundH); ctx.closePath(); ctx.fill();
+  }
+  function drawPipes() {
+    for (const p of pipes) {
+      const bottomY = p.bottom;
+      // Тіла труб
+      ctx.fillStyle = '#31bd68';
+      ctx.strokeStyle = '#16884a'; ctx.lineWidth = 3;
+      ctx.fillRect(p.x, 0, pipeW, p.top);
+      ctx.strokeRect(p.x, -2, pipeW, p.top+2);
+      ctx.fillRect(p.x, bottomY, pipeW, H-groundH-bottomY);
+      ctx.strokeRect(p.x, bottomY, pipeW, H-groundH-bottomY);
+      // Краї труб
+      ctx.fillStyle = '#42d978';
+      ctx.fillRect(p.x-5, p.top-22, pipeW+10, 22);
+      ctx.strokeRect(p.x-5, p.top-22, pipeW+10, 22);
+      ctx.fillRect(p.x-5, bottomY, pipeW+10, 22);
+      ctx.strokeRect(p.x-5, bottomY, pipeW+10, 22);
+      // Блік
+      ctx.fillStyle = '#a1f4b8';
+      ctx.fillRect(p.x+9, 0, 7, Math.max(0,p.top-23));
+      ctx.fillRect(p.x+9, bottomY+23, 7, Math.max(0,H-groundH-bottomY-23));
+    }
+  }
+  function drawGround() {
+    ctx.fillStyle = '#f5d88a'; ctx.fillRect(0,H-groundH,W,groundH);
+    ctx.fillStyle = '#7bd45d'; ctx.fillRect(0,H-groundH,W,13);
+    ctx.fillStyle = '#55b849';
+    for(let x=-((frame*2)%32);x<W;x+=32) {
+      ctx.beginPath(); ctx.moveTo(x,H-groundH+13); ctx.lineTo(x+16,H-groundH+13);
+      ctx.lineTo(x+7,H-groundH+20); ctx.closePath(); ctx.fill();
+    }
+    ctx.strokeStyle = '#d8b76d'; ctx.lineWidth = 2;
+    for(let y=H-groundH+32;y<H;y+=23) {
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    }
+  }
+  function drawBird() {
+    ctx.save(); ctx.translate(bird.x,bird.y); ctx.rotate(bird.angle);
+    // Тінь
+    ctx.fillStyle = '#23556b24'; ctx.beginPath(); ctx.ellipse(1,17,15,4,0,0,Math.PI*2); ctx.fill();
+    // Тіло
+    ctx.fillStyle = '#ffd84f'; ctx.strokeStyle = '#d99827'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.ellipse(0,0,bird.r+2,bird.r,0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    // Крильце
+    ctx.fillStyle = '#ffb52f';
+    ctx.beginPath(); ctx.ellipse(-5,5,9,6,Math.sin(frame*.4)*.3,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    // Око
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(7,-5,6,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#243746'; ctx.beginPath(); ctx.arc(9,-5,2.5,0,Math.PI*2); ctx.fill();
+    // Дзьоб
+    ctx.fillStyle = '#ff8a36'; ctx.strokeStyle = '#d66c28';
+    ctx.beginPath(); ctx.moveTo(13,1); ctx.lineTo(25,5); ctx.lineTo(13,9); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  function circleRect(cx,cy,r,x,y,w,h) {
+    const nx = Math.max(x,Math.min(cx,x+w));
+    const ny = Math.max(y,Math.min(cy,y+h));
+    return (cx-nx)**2+(cy-ny)**2 < r*r;
+  }
+  function update() {
+    frame++;
+    if(state === 'ready') {
+      bird.y = 275 + Math.sin(frame*.07)*7;
+      bird.angle = Math.sin(frame*.07)*.05;
+      return;
+    }
+    if(state !== 'playing') return;
+    bird.vy += gravity; bird.y += bird.vy;
+    bird.angle = Math.min(.9,Math.max(-.55,bird.vy*.08));
+    if(frame % 96 === 0) addPipe(W+10);
+    for(const p of pipes) {
+      p.x -= pipeSpeed;
+      if(!p.passed && p.x+pipeW < bird.x) {
+        p.passed = true; score++; scoreEl.textContent = score;
+      }
+      if(circleRect(bird.x,bird.y,bird.r,p.x,0,pipeW,p.top) ||
+         circleRect(bird.x,bird.y,bird.r,p.x,p.bottom,pipeW,H-groundH-p.bottom)) {
+        gameOver();
+      }
+    }
+    pipes = pipes.filter(p => p.x+pipeW+10 > 0);
+    if(bird.y-bird.r < 0 || bird.y+bird.r > H-groundH) gameOver();
+  }
+  function draw() {
+    drawBackground(); drawPipes(); drawGround(); drawBird();
+  }
+  function loop() { update(); draw(); requestAnimationFrame(loop); }
+  function action(e) {
+    if(e) e.preventDefault();
+    if(state === 'ready') start();
+    else if(state === 'over') { start(); }
+    else flap();
+  }
+  canvas.addEventListener('pointerdown', action);
+  startBtn.addEventListener('click', start);
+  document.addEventListener('keydown', e => {
+    if(e.code === 'Space' || e.code === 'ArrowUp') {
+      e.preventDefault();
+      if(state === 'ready' || state === 'over') start();
+      else flap();
+    }
+  });
+  reset();
+  loop();
+})();
+</script>
+</body>
+</html>
